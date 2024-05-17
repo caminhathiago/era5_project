@@ -8,7 +8,7 @@ from pyspark.sql.types import (StructType, StructField,
 import xarray as xr
 import pandas as pd
 from typing import Union
-
+from datetime import datetime, timedelta
 
 class CDSAPIExtractor:
 
@@ -19,6 +19,41 @@ class CDSAPIExtractor:
     @staticmethod
     def create_client() -> cdsapi.api.Client:
         return cdsapi.Client()
+
+    @staticmethod
+    def generate_datetimes(end_date:datetime=datetime.utcnow(), past_days:int=7) -> pd.DataFrame:
+        date_times = [end_date]
+        for days in range(1,past_days+1):
+            increment_datetime = end_date - timedelta(days=days)
+            date_times.append(increment_datetime)
+
+        date_times.sort()
+
+        return pd.DataFrame(date_times, columns=["date_time"])
+
+    @staticmethod
+    def round_now_time(date_times:pd.DataFrame) -> pd.DataFrame:
+        return pd.DataFrame(date_times.date_time.round('1H'))
+
+    @staticmethod
+    def get_datetimes_components(date_times:pd.DataFrame) -> dict:
+
+        date_times['year'] = date_times.date_time.dt.year
+        date_times['month'] = date_times.date_time.dt.month
+        date_times['day'] = date_times.date_time.dt.day
+        date_times['time'] = date_times.date_time.dt.hour.astype(str) + ":00"
+
+        years = list(date_times['year'].unique().astype(str))
+        months = list(date_times['month'].unique().astype(str))
+        days = list(date_times['day'].unique().astype(str))
+        times = list(date_times['time'].unique().astype(str))
+
+        return {'year':years,
+                'month':months,
+                'day':days,
+                'time':times,
+            }
+
 
     @staticmethod
     def request(cdsapi_client: cdsapi.api.Client,
@@ -114,17 +149,23 @@ def main():
 
     # cdsapi interaction
     cdsapi_client = CDSAPIExtractor.create_client()
+
+    date_times = CDSAPIExtractor.generate_datetimes(end_date=datetime.utcnow(), past_days=7)
+    # date_times = CDSAPIExtractor.round_now_time(date_times=date_times)
+    date_times_components = CDSAPIExtractor.get_datetimes_components(date_times=date_times)
+    print(type(date_times_components['time']))
+
     CDSAPIExtractor.request(cdsapi_client=cdsapi_client,
                 variable=CDSAPIExtractor.variables,
-                year='2023',
-                month='07',
-                day='30',
-                time='12:00',
+                year=date_times_components['year'],
+                month=date_times_components['month'],
+                day=date_times_components['day'],
+                time=date_times_components['time'],
                 area=[-19, -48, -27, -36],
-                output_file="test_etl.nc"
+                output_file="era5_data.nc"
                 )
 
-    df = CDSAPIExtractor.dataset_to_dataframe(nc_file="test_etl.nc")
+    df = CDSAPIExtractor.dataset_to_dataframe(nc_file="era5_data.nc")
     CDSAPIExtractor.save_as_csv(df=df, output_file="era5_data.csv")
 
 
