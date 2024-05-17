@@ -1,0 +1,4 @@
+findspark
+pandas
+cdsapi
+xarray
