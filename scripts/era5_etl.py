@@ -5,6 +5,7 @@ from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.types import (StructType, StructField,
                                  StringType, IntegerType,
                                  DoubleType, TimestampType)
+from pyspark.sql.functions import col, desc
 import xarray as xr
 import pandas as pd
 from typing import Union
@@ -116,7 +117,7 @@ class ERA5ETL:
 
     @staticmethod
     def extract(spark:SparkSession, csv_file:str) -> DataFrame:
-        return spark.read.csv(csv_file)
+        return spark.read.csv(csv_file, schema=ERA5ETL.era5_schema)
 
     @staticmethod
     def transform() -> DataFrame:
@@ -133,6 +134,15 @@ class ERA5ETL:
         return df
 
     @staticmethod
+    def sort_values(df:DataFrame) -> DataFrame:
+        return df.orderBy(col("time").desc(),col("latitude").desc())
+
+    @staticmethod
+    def drop_na_rows(df:DataFrame) -> DataFrame:
+        return df.na.drop(how="any")
+
+
+    @staticmethod
     def load(df: DataFrame, parquet_file:str) -> None:
         df.write.parquet(parquet_file, mode='overwrite')
 
@@ -147,13 +157,11 @@ class ETLFactory:
 
 def main():
 
-    # cdsapi interaction
+    # CDSAPI INTERACTION
     cdsapi_client = CDSAPIExtractor.create_client()
 
     date_times = CDSAPIExtractor.generate_datetimes(end_date=datetime.utcnow(), past_days=7)
-    # date_times = CDSAPIExtractor.round_now_time(date_times=date_times)
     date_times_components = CDSAPIExtractor.get_datetimes_components(date_times=date_times)
-    print(type(date_times_components['time']))
 
     CDSAPIExtractor.request(cdsapi_client=cdsapi_client,
                 variable=CDSAPIExtractor.variables,
@@ -172,8 +180,16 @@ def main():
     # ETL
     factory = ETLFactory()
     spark = factory.create_etl(app_name="ERA5ETL")
+
+    # extract
     df = ERA5ETL.extract(spark, csv_file="era5_data.csv")
+
+    # transform
     df = ERA5ETL.rename_variables(df=df, rename_dict=ERA5ETL.rename_dict)
+    df = ERA5ETL.sort_values(df=df)
+    df = ERA5ETL.drop_na_rows(df=df)
+
+    # load
     ERA5ETL.load(df=df, parquet_file="era5_data.parquet")
 
 if __name__ == '__main__':
