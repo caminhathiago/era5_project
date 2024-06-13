@@ -1,2 +1,3 @@
 # era5_project
-Handling ERA5 data from the Climate Data Store API with Python and Spark.
+
+A batch data pipeline that extracts ERA5 meteoceanographic data in batches from the Climate Data Store API, processes it a loads as parquet files.
